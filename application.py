@@ -3,6 +3,7 @@
 import os
 
 from cs50 import SQL
+from datetime import datetime
 from flask import Flask, flash, jsonify, redirect, render_template, request, session
 from flask_session import Session
 from tempfile import mkdtemp
@@ -52,9 +53,52 @@ def index():
 @app.route("/buy", methods=["GET", "POST"])
 @login_required
 def buy():
-    """Buy shares of stock"""
-    return apology("TODO")
+    if request.method == "POST":
+        symbol = request.form.get("symbol").upper()
+        shares = request.form.get("shares")
+        stock_info = lookup(symbol)
 
+
+        # Make sure tracker is valid
+        if stock_info == None:
+            return apology("invalid symbol", 400)
+
+        # At least one share selected to purchase
+        if shares == '':
+            return apology("cannot buy 0 shares", 400)
+
+        stock_price = stock_info["price"]
+
+        # Query database for current user's cash
+        user_cash = db.execute("SELECT cash FROM users WHERE id = :id", id=session["user_id"])[0]["cash"]
+
+        # Purchase shares
+        purchase = stock_price * int(shares)
+        if purchase > user_cash:
+            return apology("cannot afford", 400)
+
+        # Check if user already owns shares of the symbol they are trying to buy
+        try:
+            existing_shares = db.execute("SELECT * FROM stocks WHERE user_id = :id AND symbol = :symbol", id=session["user_id"], symbol=symbol)[0]["symbol"]
+        except:
+            existing_shares = False
+
+        # No previous shares owned
+        if not existing_shares:
+            db.execute("INSERT INTO stocks ('user_id', 'symbol', 'shares') VALUES (:id, :symbol, :shares)", id=session["user_id"], symbol=symbol, shares=shares)
+        # Update share count
+        else:
+            db.execute("UPDATE stocks SET shares = shares + :shares WHERE user_id = :id AND symbol = :symbol", shares=shares, id=session["user_id"], symbol=symbol)
+
+        # Update user's cash amount
+        db.execute("UPDATE users SET cash = :cash WHERE id= :id", cash=(user_cash - purchase), id=session["user_id"])
+
+        # Add transaction to transactions table
+        db.execute("INSERT INTO transactions ('user_id', 'symbol', 'amount', 'price', 'date') VALUES (:id, :symbol, :amount, :price, :date)", id=session["user_id"], symbol=symbol, amount=shares, price=purchase, date=datetime.now())
+        # Return user to home page
+        return redirect("/")
+    else:
+        return render_template("buy.html")
 
 @app.route("/history")
 @login_required
