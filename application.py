@@ -1,5 +1,3 @@
-# export API_KEY=pk_1310db0d95ab45dcac14697c66d7c39a
-
 import os
 
 from cs50 import SQL
@@ -46,13 +44,10 @@ if not os.environ.get("API_KEY"):
 @app.route("/")
 @login_required
 def index():
-
-
-    cash = db.execute("SELECT cash FROM users WHERE id = :id", id=session["user_id"])[0]["cash"]
-
     # stocks = a list of dictionaries
     # Each dictionary item represents a symbol that the user owns shares of
     stocks = db.execute("SELECT * FROM stocks WHERE user_id = :id", id=session["user_id"])
+    cash = db.execute("SELECT cash FROM users WHERE id = :id", id=session["user_id"])[0]["cash"]
 
     # stock_cash tracks how much $ user owns in stocks
     stock_cash = 0
@@ -83,7 +78,6 @@ def buy():
         symbol = request.form.get("symbol").upper()
         shares = request.form.get("shares")
         stock_info = lookup(symbol)
-
 
         # Make sure tracker is valid
         if stock_info == None:
@@ -123,15 +117,46 @@ def buy():
         db.execute("INSERT INTO transactions ('user_id', 'symbol', 'amount', 'price', 'date') VALUES (:id, :symbol, :amount, :price, :date)", id=session["user_id"], symbol=symbol, amount=shares, price=stock_price, date=datetime.now())
 
         # Return user to home page
+        flash("Bought!")
         return redirect("/")
     else:
         return render_template("buy.html")
 
+
+@app.route("/cash", methods=["GET", "POST"])
+@login_required
+def cash():
+    cash = db.execute("SELECT cash FROM users WHERE id = :id", id=session["user_id"])[0]["cash"]
+
+    if request.method == "POST":
+        requested_cash = int(request.form.get("cash"))
+
+        # Add a positive cash value
+        if requested_cash < 1:
+            return apology("Add at least $1")
+
+        # Update user's new cash amount in database
+        new_amount = cash + requested_cash
+        db.execute("UPDATE users SET cash = :cash WHERE id = :id", cash=new_amount, id=session["user_id"])
+
+        # Redirect back to dashboard
+        flash("Money Added!")
+        return redirect("/")
+
+    else:
+        cash = usd(cash)
+        return render_template("cash.html", cash_amount=cash)
+
+
 @app.route("/history")
 @login_required
 def history():
-    """Show history of transactions"""
-    return apology("TODO")
+    transactions = db.execute("SELECT * FROM transactions WHERE user_id = :id", id=session["user_id"])
+
+    for transaction in transactions:
+        transaction["price"] = usd(transaction["price"])
+
+    return render_template("history.html", transactions=transactions)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -231,17 +256,19 @@ def register():
 
         # Insert new user into users table
         db.execute("INSERT INTO users (username, hash) VALUES (:username, :hash)", username=username, hash=hash)
+
+        # Redirect user to dashboard
+        flash("Registered!")
         return redirect("/")
     else:
         return render_template("register.html")
-
-
 
 
 @app.route("/sell", methods=["GET", "POST"])
 @login_required
 def sell():
     if request.method == "POST":
+        stocks = db.execute("SELECT * FROM stocks WHERE user_id = :id", id=session["user_id"])
 
         # A symbol must be chosen
         if request.form.get("symbol") == None:
@@ -266,19 +293,22 @@ def sell():
             db.execute("DELETE FROM stocks WHERE user_id = :id AND symbol = :symbol", id=session["user_id"], symbol=symbol)
 
         # Update user cash
+        user_cash = db.execute("SELECT cash FROM users WHERE id = :id", id=session["user_id"])[0]["cash"]
         stock_price = lookup(symbol)["price"]
         cash_gained = stock_price * shares_to_sell
-        db.execute("UPDATE users SET cash = cash + :cash WHERE id = :id", cash=cash_gained, id=session["user_id"])
+        db.execute("UPDATE users SET cash = :cash WHERE id = :id", cash=(user_cash + cash_gained), id=session["user_id"])
 
         # Add transaction to transactions table
         db.execute("INSERT INTO transactions ('user_id', 'symbol', 'amount', 'price', 'date') VALUES (:id, :symbol, :amount, :price, :date)", id=session["user_id"], symbol=symbol, amount=-shares_to_sell, price=stock_price, date=datetime.now())
 
         # Return user to home page
+        flash("Sold!")
         return redirect("/")
 
     else:
         stocks = db.execute("SELECT * FROM stocks WHERE user_id = :id", id=session["user_id"])
         return render_template("sell.html", stocks=stocks)
+
 
 def errorhandler(e):
     """Handle error"""
