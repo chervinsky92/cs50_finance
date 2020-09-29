@@ -46,33 +46,27 @@ if not os.environ.get("API_KEY"):
 @app.route("/")
 @login_required
 def index():
-
-
+    
+    
     cash = db.execute("SELECT cash FROM users WHERE id = :id", id=session["user_id"])[0]["cash"]
-
-    # stocks = a list of dictionaries
-    # Each dictionary item represents a symbol that the user owns shares of
+    
+    # stocks is a list of dictionaries
     stocks = db.execute("SELECT * FROM stocks WHERE user_id = :id", id=session["user_id"])
-
-    # stock_cash tracks how much $ user owns in stocks
     stock_cash = 0
-    # Add name, price, and total keys to each dictionary item that will exist for the duration of the function call
+
     for stock in stocks:
         stock["name"] = lookup(stock["symbol"])["name"]
         stock["price"] = float(lookup(stock["symbol"])["price"])
 
-        # stock_value = how much $ user owns from a symbol
         stock_value = stock["price"] * stock["shares"]
         stock_cash += stock_value
 
-        # Convert to dollar format
         stock["price"] = usd(stock["price"])
         stock["total"] = str(usd(stock_value))
 
-    # Convert to dollar format
     total_cash = usd(cash + stock_cash)
     cash = usd(cash)
-
+    print(stocks)
     return render_template("index.html", cash=cash, total_cash=total_cash, stocks=stocks)
 
 
@@ -87,11 +81,11 @@ def buy():
 
         # Make sure tracker is valid
         if stock_info == None:
-            return apology("invalid symbol")
+            return apology("invalid symbol", 400)
 
         # At least one share selected to purchase
         if shares == '':
-            return apology("cannot buy 0 shares")
+            return apology("cannot buy 0 shares", 400)
 
         stock_price = stock_info["price"]
 
@@ -101,7 +95,7 @@ def buy():
         # Purchase shares
         purchase = stock_price * int(shares)
         if purchase > user_cash:
-            return apology("cannot afford")
+            return apology("cannot afford", 400)
 
         # Check if user already owns shares of the symbol they are trying to buy
         try:
@@ -120,8 +114,7 @@ def buy():
         db.execute("UPDATE users SET cash = :cash WHERE id= :id", cash=(user_cash - purchase), id=session["user_id"])
 
         # Add transaction to transactions table
-        db.execute("INSERT INTO transactions ('user_id', 'symbol', 'amount', 'price', 'date') VALUES (:id, :symbol, :amount, :price, :date)", id=session["user_id"], symbol=symbol, amount=shares, price=stock_price, date=datetime.now())
-
+        db.execute("INSERT INTO transactions ('user_id', 'symbol', 'amount', 'price', 'date') VALUES (:id, :symbol, :amount, :price, :date)", id=session["user_id"], symbol=symbol, amount=shares, price=purchase, date=datetime.now())
         # Return user to home page
         return redirect("/")
     else:
@@ -191,7 +184,7 @@ def quote():
 
         # Make sure tracker is valid
         if stock_info == None:
-            return apology("invalid symbol")
+            return apology("invalid symbol", 400)
 
         # Return stock name and price
         stock_name = stock_info["name"]
@@ -211,20 +204,20 @@ def register():
 
         # Username field is not blank
         if not username:
-            return apology("must provide username")
+            return apology("must provide username", 400)
 
         # Password fields are filled out
         if not password or not password_confirmation:
-            return apology("must provide password")
+            return apology("must provide password", 400)
 
         # Passwords match
         if password != password_confirmation:
-            return apology("passwords do not match")
+            return apology("passwords do not match", 400)
 
         # Check if username already exists
         rows = db.execute("SELECT * FROM users WHERE username = :username", username=username)
         if rows[0]["username"] == username:
-            return apology("username already exists")
+            return apology("username already exists", 400)
 
         # Hash password
         hash = generate_password_hash(password)
@@ -241,44 +234,9 @@ def register():
 @app.route("/sell", methods=["GET", "POST"])
 @login_required
 def sell():
-    if request.method == "POST":
+    """Sell shares of stock"""
+    return apology("TODO")
 
-        # A symbol must be chosen
-        if request.form.get("symbol") == None:
-            return apology("missing symbol")
-        symbol = request.form.get("symbol").upper()
-
-        # Must sell at least 1 share
-        shares_to_sell = int(request.form.get("shares"))
-        if shares_to_sell < 1:
-            return apology("shares must be positive")
-
-        owned_shares = db.execute("SELECT shares FROM stocks WHERE user_id = :id AND symbol = :symbol", id=session["user_id"], symbol=symbol)[0]["shares"]
-
-        # Check if user owns the shares they are trying to sell
-        if shares_to_sell > owned_shares:
-            return apology("too many shares")
-        # Update shares owned if shares left > 0
-        elif owned_shares - shares_to_sell > 0:
-            db.execute("UPDATE stocks SET shares = shares - :shares WHERE user_id = :id AND symbol = :symbol", shares=shares_to_sell, id=session["user_id"], symbol=symbol)
-        # Delete symbol from stocks owned if there are no shares left after transaction
-        else:
-            db.execute("DELETE FROM stocks WHERE user_id = :id AND symbol = :symbol", id=session["user_id"], symbol=symbol)
-
-        # Update user cash
-        stock_price = lookup(symbol)["price"]
-        cash_gained = stock_price * shares_to_sell
-        db.execute("UPDATE users SET cash = cash + :cash WHERE id = :id", cash=cash_gained, id=session["user_id"])
-
-        # Add transaction to transactions table
-        db.execute("INSERT INTO transactions ('user_id', 'symbol', 'amount', 'price', 'date') VALUES (:id, :symbol, :amount, :price, :date)", id=session["user_id"], symbol=symbol, amount=-shares_to_sell, price=stock_price, date=datetime.now())
-
-        # Return user to home page
-        return redirect("/")
-
-    else:
-        stocks = db.execute("SELECT * FROM stocks WHERE user_id = :id", id=session["user_id"])
-        return render_template("sell.html", stocks=stocks)
 
 def errorhandler(e):
     """Handle error"""
