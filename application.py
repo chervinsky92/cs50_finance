@@ -247,8 +247,12 @@ def register():
             return apology("passwords do not match")
 
         # Check if username already exists
-        rows = db.execute("SELECT * FROM users WHERE username = :username", username=username)
-        if rows[0]["username"] == username:
+        try:
+            existing_user = db.execute("SELECT username FROM users WHERE username = :username", username=username)[0]["username"]
+        except:
+            existing_user = None
+
+        if existing_user is not None and existing_user == username:
             return apology("username already exists")
 
         # Hash password
